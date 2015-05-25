@@ -1,0 +1,14 @@
+#ifndef NODEINFO_INCL
+0;136;0c#define NODEINFO_INCL
+
+
+
+struct nodeinfo
+{
+  string dest_router;
+  int source_portno;
+  int cost;
+};
+
+
+#endif
