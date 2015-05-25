@@ -62,6 +62,8 @@ void read_file(string filename, vector<nodeinfo> &nodevec, string source)
       if (field_start != -1)
 	nodevec.push_back(n);
     }
+
+  fin.close();
 }
 
 /*
