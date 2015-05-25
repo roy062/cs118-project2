@@ -7,10 +7,13 @@
 
 using namespace std;
 
-void read_file(string filename, vector<nodeinfo> &nodevec, string source)
+int read_file(const string &filename, vector<nodeinfo> &nodevec, const string &source)
 {
   ifstream fin;
+  
   fin.open(filename.c_str());
+  if (fin.fail())
+    return -1;
 
   string line;
   nodeinfo n;
@@ -31,10 +34,7 @@ void read_file(string filename, vector<nodeinfo> &nodevec, string source)
 	      if (field == 0)
 		{
 		  if (line.substr(0,i) != source)
-		    {
-		      field_start = -1;
 		      break;
-		    }
 		}
 	      else if (field == 1)
 		{
@@ -51,6 +51,8 @@ void read_file(string filename, vector<nodeinfo> &nodevec, string source)
 		  string cost = line.substr(field_start, i + 1 - field_start);
 		  n.cost = atoi(cost.c_str());
 		}
+	      else
+		return -1;  // parsing error
 	      
 	      field++;
 	      field_start = i + 1;
@@ -59,11 +61,12 @@ void read_file(string filename, vector<nodeinfo> &nodevec, string source)
 
       // Add link information to vector
 
-      if (field_start != -1)
+      if (field == 4)
 	nodevec.push_back(n);
     }
 
   fin.close();
+  return 0;
 }
 
 /*
