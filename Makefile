@@ -4,6 +4,7 @@ LFLAGS=
 
 all: my-router.o read-file.o
 	$(CC) *.o -o my-router $(LFLAGS)
+	$(CC) -std=c++11 -g inject-packet.cpp -o inject-packet $(LFLAGS)
 
 clean:
 	rm -f *.o

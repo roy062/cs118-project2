@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -11,10 +12,29 @@
 
 const int MAX_PACKET_SIZE = 4096;
 
-enum PacketType {
-  CONTROL = 0,
-  DATA = 1
+enum PacketType : char {
+   CONTROL = 0,
+   DATA = 1
 };
+
+void makeDVUpdatePacket(const std::unordered_map<std::string, int>& dv,
+                        std::string& packet)
+{
+   packet = std::string();
+
+   // Write header bytes
+   packet += CONTROL;
+
+   // Write payload bytes
+   for (auto iter = dv.cbegin(); iter != dv.cend(); iter++)
+   {
+      auto node = *iter;
+      packet += node.first;   // Write dest node name
+      packet += '\0';
+      packet += node.second;  // Write least-cost to dest node
+      packet += '\0';
+   }
+}
 
 void usage()
 {
@@ -67,6 +87,14 @@ int main(int argc, char **argv)
       return 1;
    }
 
+   // Initialize the distance vector
+   std::unordered_map<std::string, int> dv;
+   for (auto iter = neighbor_info.begin(); iter != neighbor_info.end(); iter++)
+   {
+      nodeinfo ni = *iter;
+      dv[ni.dest_router] = ni.cost;
+   }
+
    while (true)
    {
       char buf[MAX_PACKET_SIZE];
@@ -80,10 +108,10 @@ int main(int argc, char **argv)
       char packet_type = buf[0];
       switch (packet_type)
       {
-      case CONTROL:
-        break;
-      case DATA:
-        break;
+         case CONTROL:
+            break;
+         case DATA:
+            break;
       }
 
       std::cout << buf << std::endl;

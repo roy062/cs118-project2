@@ -17,15 +17,18 @@ int main()
   addr.sin_family = AF_INET;
   addr.sin_port = htons(10000);
   addr.sin_addr.s_addr = INADDR_ANY;
-  
+
+/*  
   if (bind(socket_fd, (sockaddr*)&addr, sizeof(addr)) == -1)
     {
       std::cerr << "inject-packet: Error binding socket" << std::endl;
       return 1;
     }
+*/
 
   std::string text = "bunch of data in a packet...";
-  write(socket_fd, text.c_str(), text.length()); 
+  //write(socket_fd, text.c_str(), text.length()); 
+  sendto(socket_fd, text.c_str(), text.length(), 0, (sockaddr*)&addr, sizeof(addr));
   close(socket_fd);
 
   return 0;
