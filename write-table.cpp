@@ -1,20 +1,21 @@
-#include <unordered_map>
+#include <map>
 #include <string>
 #include <fstream>
 #include <iomanip>
 #include <ctime>
+#include <list>
 #include "router.h"
 
 using namespace std;
 
-void writeTable(unordered_map<string, dv_entry> table, unsigned short current_port, ofstream &fout)
+void writeTable(ofstream& fout, map<string, dv_entry> table, unsigned short current_port)
 {
 	// Columns 
 	fout << "Destination" << "          " << "Cost" << "          " << "Outgoing Port" 
 		 << "          " << "Destination Port\n";
 
 	// Print table info
-	for (unordered_map<string,dv_entry>::iterator it = table.begin(); it != table.end(); it++)
+	for (map<string,dv_entry>::iterator it = table.begin(); it != table.end(); it++)
 	{
 		fout << left; 
 		fout << setw(11) << it->first << "          ";
@@ -67,7 +68,7 @@ void writeDV(ofstream &fout, list<pair<string, int>> dv, string node_name)
 /*
 int main()
 {
-	unordered_map<string, dv_entry> m;
+	map<string, dv_entry> m;
 	dv_entry dv1 = make_pair(3, 10001);
 	m["B"] = dv1;
 	dv_entry dv2 = make_pair(1, 10005);

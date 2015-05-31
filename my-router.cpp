@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <unordered_map>
+#include <map>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -13,22 +13,21 @@
 #include "read-file.h"
 #include "read-dv.h"
 #include "router.h"
+#include "write-table.h"
 
-void write_table(std::ofstream& fout,
-                 const std::unordered_map<std::string, dv_entry>& dv,
-                 unsigned short source_port,
-                 unsigned short this_port)
-{
-}
-
-void broadcastDV(const std::unordered_map<std::string, dv_entry>& dv, 
-                 const std::vector<nodeinfo> neighbor_info,
+void broadcastDV(const std::map<std::string, dv_entry>& dv, 
+                 const std::vector<nodeinfo>& neighbor_info,
+                 unsigned short this_port,
                  int out_socket)
 {
    std::string packet = std::string();
 
    // Write header bytes
    packet += CONTROL;
+
+   this_port = htons(this_port);
+   packet += (char)(this_port & 0xFF);
+   packet += (char)((this_port >> 8) & 0xFF);
 
    // Write payload bytes
    for (auto iter = dv.cbegin(); iter != dv.cend(); iter++)
@@ -37,11 +36,11 @@ void broadcastDV(const std::unordered_map<std::string, dv_entry>& dv,
       packet += '\0';
 
       // Write cost in big-endian
-      int cost = iter->second.first;
-      packet += (char)((cost & 0xff000000) >> 24);
-      packet += (char)((cost & 0x00ff0000) >> 16);
-      packet += (char)((cost & 0x0000ff00) >> 8);
-      packet += (char)(cost & 0x000000ff);
+      int cost = htonl(iter->second.first);
+      packet += (char)(cost & 0xFF);
+      packet += (char)((cost >> 8) & 0xFF);
+      packet += (char)((cost >> 16) & 0xFF);
+      packet += (char)((cost >> 24) & 0xFF);
    }
 
    sockaddr_in dest_addr;
@@ -55,19 +54,20 @@ void broadcastDV(const std::unordered_map<std::string, dv_entry>& dv,
    }
 }
 
-int updateDV(std::unordered_map<std::string, dv_entry>& dv,
-             const std::list<std::pair<std::string, int>>& lcp,
-             std::unordered_map<unsigned short, std::string>& port_to_node,
-             unsigned short source_port,
-             unsigned short this_port,
-             std::ofstream& fout)
+bool updateDV(std::map<std::string, dv_entry>& dv,
+              const std::list<std::pair<std::string, int>>& lcp,
+              std::map<unsigned short, std::string>& port_to_node,
+              int link_cost,
+              unsigned short source_port,
+              unsigned short this_port,
+              std::ofstream& fout)
 {
    bool dv_changed = false;
    const std::string source_id = port_to_node[source_port];
 
    for (auto iter = lcp.begin(); iter != lcp.end(); iter++)
    {
-      int path_cost = iter->second + dv[source_id].first;
+      int path_cost = iter->second + link_cost;
 
       // Do not change if destination is already in table and has a better path
       if (dv.count(iter->first) > 0)
@@ -78,21 +78,22 @@ int updateDV(std::unordered_map<std::string, dv_entry>& dv,
 
          // Or the paths are of equal cost but the next router has a lower ID
          if (dv[iter->first].first == path_cost
-             && port_to_node[dv[iter->first].second] <= iter->first)
+             && port_to_node[dv[iter->first].second] <= source_id)
             continue;
       }
 
       if (!dv_changed)
       {
          // DV is about to change, so print out the old one before modifying it
-         write_table(fout, dv, source_port, this_port);
+         writeTime(fout);
+         writeTable(fout, dv, this_port);
+         writeDV(fout, lcp, source_id);
          dv_changed = true;
       }
       dv[iter->first] = std::make_pair(path_cost, source_port);
    }
 
-   if (dv_changed)
-      write_table(fout, dv, source_port, this_port);
+   return dv_changed;
 }
 
 void usage()
@@ -118,7 +119,8 @@ int main(int argc, char **argv)
    }
    catch (const std::invalid_argument& e)
    {
-      std::cerr << "my-router: Invalid port: " << argv[1] << std::endl;
+      std::cerr << "my-router: (Node " << id << ") Invalid port: " << argv[1]
+                << std::endl;
       usage();
       return 1;
    }
@@ -126,7 +128,8 @@ int main(int argc, char **argv)
    std::vector<nodeinfo> neighbor_info;
    if (read_file(argv[3], neighbor_info, argv[1]) != 0)
    {
-      std::cerr << "my-router: Error reading " << argv[2] << std::endl;
+      std::cerr << "my-router: (Node " << id << ") Error reading " << argv[2]
+                << std::endl;
       usage();
       return 1;
    }
@@ -135,7 +138,8 @@ int main(int argc, char **argv)
    int out_socket = socket(AF_INET, SOCK_DGRAM, 0);
    if (listen_socket == -1 || out_socket == -1)
    {
-      std::cerr << "my-router: Error creating socket" << std::endl;
+      std::cerr << "my-router: (Node " << id << ") Error creating socket"
+                << std::endl;
       return 1;
    }
 
@@ -145,26 +149,34 @@ int main(int argc, char **argv)
    addr.sin_addr.s_addr = INADDR_ANY;
    if (bind(listen_socket, (sockaddr*)&addr, sizeof(addr)) == -1)
    {
-      std::cerr << "my-router: Error binding socket" << std::endl;
+      std::cerr << "my-router: (Node " << id << ") Error binding socket"
+                << std::endl;
       return 1;
    }
 
    // Initialize the distance vector
-   std::unordered_map<std::string, dv_entry> dv;
-   std::unordered_map<unsigned short, std::string> port_to_node;
+   std::map<std::string, dv_entry> dv;
+   std::map<unsigned short, int> link_costs;
+   std::map<unsigned short, std::string> port_to_node;
+   dv[id] = std::make_pair(0, port);
    for (auto iter = neighbor_info.begin(); iter != neighbor_info.end(); iter++)
    {
       dv[iter->dest_router] = std::make_pair(iter->cost, iter->source_portno);
+      link_costs[iter->source_portno] = iter->cost;
       port_to_node[iter->source_portno] = iter->dest_router;
    }
-
-   // Broadcast DV
-   broadcastDV(dv, neighbor_info, out_socket);
 
    // Open a file for logging
    std::ofstream fout;
    std::string filename = "routing-output" + id + ".txt";
    fout.open(filename, std::ofstream::out | std::ofstream::app);
+
+   // Print out the initial distance vector
+   writeTime(fout);
+   writeTable(fout, dv, port);
+
+   // Broadcast DV
+   broadcastDV(dv, neighbor_info, port, out_socket);
 
    while (true)
    {
@@ -176,23 +188,28 @@ int main(int argc, char **argv)
       if (n <= 0)
          continue;
 
-      unsigned short src_port = ntohs(src_addr.sin_port);
       char packet_type = buf[0];
       switch (packet_type)
       {
          case CONTROL: {
             // CONTROL packet header:
             // 1 byte -- 0, to indicate control packet
-
+            // 2 byte -- source port
 
             // Ignore control packets from non-registered neighbors
+            unsigned short src_port = (buf[1] << 8) + buf[2];
             if (port_to_node.count(src_port) == 0)
                break;
 
             std::list<std::pair<std::string, int>> lcp;
-            get_lcp(std::string(buf+1, n-1), lcp);
+            get_lcp(std::string(buf+3, n-1), lcp);
 
-            updateDV(dv, lcp, port_to_node, src_port, port, fout);
+            if (updateDV(dv, lcp, port_to_node, link_costs[src_port], src_port,
+                         port, fout))
+            {
+               writeTable(fout, dv, port);
+               broadcastDV(dv, neighbor_info, port, out_socket);
+            }
             break;
          }
          case DATA:
