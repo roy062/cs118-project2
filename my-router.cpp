@@ -244,7 +244,6 @@ int main(int argc, char **argv)
 
             std::string src_node(buf+1);
             std::string dest_node(buf+13);
-            std::cout << (unsigned)buf[25] << ' ' << (unsigned)buf[26] << std::endl;
             unsigned short src_port = ((unsigned)buf[25] << 8) | (unsigned)buf[26];
 
             dv_mutex.lock();
@@ -253,21 +252,23 @@ int main(int argc, char **argv)
                                std::string(buf+29, n-29), FINAL_DEST);
             else if (dv.count(dest_node) > 0)  // Can forward packet
             {
-               std::cout << src_port << std::endl;
                sockaddr_in dest_addr;
                dest_addr.sin_family = AF_INET;
                dest_addr.sin_addr.s_addr = INADDR_ANY;
                dest_addr.sin_port = htons(dv[dest_node].second);
+               
+               buf[25] = (port >> 8) & 0xFF;
+               buf[26] = port & 0xFF;
+
                sendto(out_socket, buf, n, 0, (sockaddr*)&dest_addr,
                       sizeof(dest_addr));
 
-                  /// TODO: write to log
+               writePacketInfo(fout, src_node, dest_node, src_port,
+                               dv[dest_node].second, "", NORMAL);
             }
             else  // Don't know how to forward packet
-            {
-               /// TODO: write to log
-               ;
-            }
+               writePacketInfo(fout, src_node, dest_node, src_port, 0, "",
+                               ERROR);
             dv_mutex.unlock();
 
             break;
