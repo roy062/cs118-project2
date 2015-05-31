@@ -18,11 +18,11 @@ void writeDV(std::ofstream& fout,
              std::list<std::pair<std::string, int>> dv,
              const std::string &node_name);
 
-void writePacketInfo(ofstream &fout, 
-				const std::string &source_node, 
-				const std::string &dest_node, 
-				unsigned short arrival_port, 
-				unsigned short outgoing_port, 
-				const std::string &payload, 
-				print_type ptype;
+void writePacketInfo(std::ofstream &fout, 
+                     const std::string &source_node, 
+                     const std::string &dest_node, 
+                     unsigned short arrival_port, 
+                     unsigned short outgoing_port, 
+                     const std::string &payload, 
+                     print_type ptype);
 #endif

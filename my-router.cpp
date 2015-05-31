@@ -1,21 +1,22 @@
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <list>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
-#include <map>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "node-info.h"
-#include "read-file.h"
-#include "read-dv.h"
 #include "router.h"
-#include "write-table.h"
+#include "read.h"
+#include "write.h"
 
-void broadcastDV(const std::map<std::string, dv_entry>& dv, 
+void broadcastDV(const std::map<std::string, dv_entry> *dv, 
                  const std::vector<nodeinfo>& neighbor_info,
                  unsigned short this_port,
                  int out_socket)
@@ -30,7 +31,7 @@ void broadcastDV(const std::map<std::string, dv_entry>& dv,
    packet += (char)((this_port >> 8) & 0xFF);
 
    // Write payload bytes
-   for (auto iter = dv.cbegin(); iter != dv.cend(); iter++)
+   for (auto iter = dv->cbegin(); iter != dv->cend(); iter++)
    {
       packet += iter->first;   // Write dest node name
       packet += '\0';
@@ -94,6 +95,21 @@ bool updateDV(std::map<std::string, dv_entry>& dv,
    }
 
    return dv_changed;
+}
+
+void doBroadcast(const std::map<std::string, dv_entry> *dv,
+                 const std::vector<nodeinfo>& neighbor_info,
+                 unsigned short this_port,
+                 int out_socket,
+                 std::mutex *dv_mutex)
+{
+   while (true)
+   {
+      dv_mutex->lock();
+      broadcastDV(dv, neighbor_info, this_port, out_socket);
+      dv_mutex->unlock();
+      std::this_thread::sleep_for(std::chrono::seconds(5));
+   }
 }
 
 void usage()
@@ -175,8 +191,12 @@ int main(int argc, char **argv)
    writeTime(fout);
    writeTable(fout, dv, port);
 
-   // Broadcast DV
-   broadcastDV(dv, neighbor_info, port, out_socket);
+   // Spawn a thread to broadcast DV periodically
+// Broadcast DV
+//   broadcastDV(dv, neighbor_info, port, out_socket);
+   std::mutex dv_mutex;
+   std::thread broadcaster(doBroadcast, &dv, neighbor_info, port, out_socket,
+                           &dv_mutex);
 
    while (true)
    {
@@ -204,12 +224,14 @@ int main(int argc, char **argv)
             std::list<std::pair<std::string, int>> lcp;
             get_lcp(std::string(buf+3, n-1), lcp);
 
+            dv_mutex.lock();
             if (updateDV(dv, lcp, port_to_node, link_costs[src_port], src_port,
                          port, fout))
             {
                writeTable(fout, dv, port);
-               broadcastDV(dv, neighbor_info, port, out_socket);
+//               broadcastDV(dv, neighbor_info, port, out_socket);
             }
+            dv_mutex.unlock();
             break;
          }
          case DATA:
@@ -219,6 +241,7 @@ int main(int argc, char **argv)
             // 2 bytes  -- packet length
             std::string dest_node(buf+1);
 
+            dv_mutex.lock();
             if (dest_node == id)  // Arrived at destination
             {
                std::string payload(buf+13);
@@ -240,6 +263,7 @@ int main(int argc, char **argv)
                /// TODO: write to log
                ;
             }
+            dv_mutex.unlock();
 
             break;
       }

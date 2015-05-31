@@ -1,9 +1,9 @@
+#include <fstream>
 #include <list>
 #include <string>
 #include <utility>
 #include <cstdlib>
 #include "read.h"
-#include "node-info.h"
 
 using namespace std;
 
@@ -29,8 +29,8 @@ void get_lcp(const string &lcpinfo, list<pair<string, int> > &lcplist)
 
          lcp_num = (lcp[0] << 24) + (lcp[1] << 16) + (lcp[2] << 8) + lcp[3];
 	  
-         pair<stdstring, int> val_pair;
-         val_pair = stdmake_pair( name, lcp_num );
+         pair<string, int> val_pair;
+         val_pair = make_pair( name, lcp_num );
          lcplist.push_back(val_pair);
 
          start_index = i + 5;
