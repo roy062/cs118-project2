@@ -209,6 +209,7 @@ int main(int argc, char **argv)
          continue;
 
       char packet_type = buf[0];
+      std::cout << (int)packet_type << std::endl;
       switch (packet_type)
       {
          case CONTROL: {
@@ -234,18 +235,29 @@ int main(int argc, char **argv)
             dv_mutex.unlock();
             break;
          }
-         case DATA:
+         case DATA: {
             // DATA packet header:
             // 1 byte   -- 1, to indicate data packet
+            // 12 bytes -- source node, as a null-terminated string
             // 12 bytes -- destination node, as a null-terminated string
+            // 2 bytes  -- src port
             // 2 bytes  -- packet length
-            std::string dest_node(buf+1);
+
+            std::string src_node(buf+1);
+            std::string dest_node(buf+13);
+            std::cout << (int)buf[25] << ' ' << (int)buf[26];
+            unsigned short src_port = (buf[25] << 8) + buf[26];
+
+//            std::cout << src_node << std::endl;
+//            std::cout << dest_node << std::endl;
+//            std::cout << src_port << std::endl;
 
             dv_mutex.lock();
             if (dest_node == id)  // Arrived at destination
             {
-               std::string payload(buf+13);
-               /// TODO: write payload
+               std::string payload(buf+15);
+               writePacketInfo(fout, src_node, dest_node, src_port, 0,
+                               std::string(buf+29, n-29), FINAL_DEST);
             }
             else if (dv.count(dest_node) > 0)  // Can forward packet
             {
@@ -266,6 +278,7 @@ int main(int argc, char **argv)
             dv_mutex.unlock();
 
             break;
+         }
       }
    }
 }

@@ -20,7 +20,7 @@ int main(int argc, char **argv)
 
    std::string text;
    if (argc < 3)
-      text = std::string("\x01F\0\0\0\0\0\0\0\0\0\0\0\0\x00\x04doot");
+      text = std::string("\x01" "A\0\0\0\0\0\0\0\0\0\0\0" "D\0\0\0\0\0\0\0\0\0\0\0" "\xff" "\xff" "\x00" "\x04" "doot", 33);
    else
    {
       text = argv[1];
