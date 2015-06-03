@@ -7,7 +7,7 @@
 
 using namespace std;
 
-void get_lcp(const string &lcpinfo, list<pair<string, int> > &lcplist)
+void getLCP(const string &lcpinfo, list<pair<string, int> > &lcplist)
 {
   
    int start_index = 0;
@@ -39,7 +39,7 @@ void get_lcp(const string &lcpinfo, list<pair<string, int> > &lcplist)
    }
 }
 
-int read_file(const string &filename, vector<nodeinfo> &nodevec, const string &source)
+int readFile(const string &filename, vector<nodeinfo> &nodevec, const string &source)
 {
   ifstream fin;
   
