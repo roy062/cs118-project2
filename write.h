@@ -25,4 +25,9 @@ void writePacketInfo(std::ofstream &fout,
                      unsigned short outgoing_port, 
                      const std::string &payload, 
                      print_type ptype);
+
+void writeExpireMsg(std::ofstream &fout,
+		    const std::string &expired_node);
+
+
 #endif

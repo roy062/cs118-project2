@@ -91,6 +91,12 @@ void writePacketInfo(ofstream &fout, const string &source_node, const string &de
 	fout << endl;
 }
 
+void writeExpireMsg(ofstream &fout, const string &expired_node)
+{
+	fout << "Detected expired node: " << expired_node << endl;
+	fout << "Refactoring routing table accordingly.\n" << endl;
+}
+
 /*
 int main()
 {
