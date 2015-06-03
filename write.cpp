@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iomanip>
 #include <ctime>
+#include <climits>
 #include <list>
 #include "router.h"
 #include "write.h"
@@ -58,7 +59,8 @@ void writeDV(ofstream &fout, list<pair<string, int>> dv, const string &node_name
 	{
 		fout << left; 
 		fout << setw(11) << it->first << "          ";
-		fout << setw(10) << it->second << "    ";
+		string printed_cost = (it->second == INT_MAX ) ? "∞" : to_string(it->second);
+		fout << setw(10) << printed_cost  << "    ";
 		fout << endl;
 	}
 
