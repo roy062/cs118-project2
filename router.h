@@ -1,7 +1,12 @@
 #ifndef ROUTER_H
 #define ROUTER_H
 
+#include <chrono>
+
 const int MAX_PACKET_SIZE = 4096;
+const std::chrono::seconds BROADCAST_PERIOD(5);
+const std::chrono::seconds NODE_CHECK_PERIOD(11);
+const time_t NODE_TTL = 10;
 
 enum PacketType : char {
    CONTROL = 0,

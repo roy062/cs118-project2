@@ -9,6 +9,9 @@ all: my-router.o read.o write.o
 clean:
 	rm -f *.o routing-output*
 
+clean-log:
+	rm -f routing-output*
+
 my-router.o: my-router.cpp read.h write.h router.h
 	$(CC) $(CCFLAGS) my-router.cpp -o my-router.o
 

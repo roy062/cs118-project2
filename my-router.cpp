@@ -1,4 +1,6 @@
 #include <chrono>
+#include <climits>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <list>
@@ -16,45 +18,83 @@
 #include "read.h"
 #include "write.h"
 
-void broadcastDV(const std::map<std::string, dv_entry> *dv, 
-                 const std::vector<nodeinfo>& neighbor_info,
-                 unsigned short this_port,
-                 int out_socket)
-{
-   std::string packet = std::string();
+std::vector<nodeinfo> neighbor_info;
+std::map<std::string, dv_entry> dv;
+std::mutex dv_mutex;
+std::map<unsigned short, int> link_costs;
+std::map<unsigned short, std::string> port_to_node;
+std::map<unsigned short, time_t> last_heard;
+std::mutex last_heard_mutex;
 
+std::ofstream fout;
+
+std::string id;
+unsigned short port;
+int listen_socket;
+int out_socket;
+
+// Makes a control packet to advertise a distance vector. Applies a poisoned
+// reverse for dest_port.
+/*void makeControlPacket(const std::map<std::string, dv_entry>& dv,
+                       unsigned short this_port,
+                       unsigned short dest_port,
+                       std::string& packet)*/
+void makeControlPacket(unsigned short dest_port, std::string& packet)
+{
+   packet = std::string();
+   
    // Write header bytes
    packet += CONTROL;
 
-   this_port = htons(this_port);
+   unsigned short this_port = htons(port);
    packet += (char)(this_port & 0xFF);
    packet += (char)((this_port >> 8) & 0xFF);
 
    // Write payload bytes
-   for (auto iter = dv->cbegin(); iter != dv->cend(); iter++)
+   for (auto iter = dv.cbegin(); iter != dv.cend(); iter++)
    {
-      packet += iter->first;   // Write dest node name
+      // Write dest node
+      packet += iter->first;
       packet += '\0';
 
-      // Write cost in big-endian
-      int cost = htonl(iter->second.first);
+      // Write cost in big-endian; apply poisoned reverse here if possible
+      int cost;
+      if (iter->second.second == dest_port)
+         cost = htonl(INT_MAX);
+      else
+         cost = htonl(iter->second.first);
+      std::cout << cost << std::endl;
+
       packet += (char)(cost & 0xFF);
       packet += (char)((cost >> 8) & 0xFF);
       packet += (char)((cost >> 16) & 0xFF);
       packet += (char)((cost >> 24) & 0xFF);
    }
+}
+/*
+void broadcastDV(const std::map<std::string, dv_entry> *dv, 
+                 const std::vector<nodeinfo>& neighbor_info,
+                 unsigned short this_port,
+                 int out_socket)
+*/
+void broadcastDV()
+{
+   std::string packet = std::string();
 
    sockaddr_in dest_addr;
    dest_addr.sin_family = AF_INET;
    dest_addr.sin_addr.s_addr = INADDR_ANY;
    for (auto iter = neighbor_info.begin(); iter != neighbor_info.end(); iter++)
    {
+//      makeControlPacket(dv, this_port, iter->source_portno, packet);
+      makeControlPacket(iter->source_portno, packet);
       dest_addr.sin_port = htons(iter->source_portno);
       sendto(out_socket, packet.c_str(), packet.size(), 0,
              (sockaddr*)&dest_addr, sizeof(dest_addr));
    }
 }
 
+/*
 bool updateDV(std::map<std::string, dv_entry>& dv,
               const std::list<std::pair<std::string, int>>& lcp,
               std::map<unsigned short, std::string>& port_to_node,
@@ -62,12 +102,20 @@ bool updateDV(std::map<std::string, dv_entry>& dv,
               unsigned short source_port,
               unsigned short this_port,
               std::ofstream& fout)
+*/
+bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
+              int link_cost,
+              unsigned short source_port)
 {
    bool dv_changed = false;
    const std::string source_id = port_to_node[source_port];
 
    for (auto iter = lcp.begin(); iter != lcp.end(); iter++)
    {
+      // INT_MAX implies infinite distance; this is used for poisoned reverse
+      if (iter->second == INT_MAX)
+         continue;
+
       int path_cost = iter->second + link_cost;
 
       // Do not change if destination is already in table and has a better path
@@ -87,7 +135,7 @@ bool updateDV(std::map<std::string, dv_entry>& dv,
       {
          // DV is about to change, so print out the old one before modifying it
          writeTime(fout);
-         writeTable(fout, dv, this_port);
+         writeTable(fout, dv, port);
          writeDV(fout, lcp, source_id);
          dv_changed = true;
       }
@@ -97,18 +145,75 @@ bool updateDV(std::map<std::string, dv_entry>& dv,
    return dv_changed;
 }
 
-void doBroadcast(const std::map<std::string, dv_entry> *dv,
+/*void doBroadcast(const std::map<std::string, dv_entry> *dv,
                  const std::vector<nodeinfo>& neighbor_info,
                  unsigned short this_port,
                  int out_socket,
-                 std::mutex *dv_mutex)
+                 std::mutex *dv_mutex)*/
+void doBroadcast()
 {
    while (true)
    {
-      dv_mutex->lock();
-      broadcastDV(dv, neighbor_info, this_port, out_socket);
-      dv_mutex->unlock();
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+      dv_mutex.lock();
+      broadcastDV();
+      dv_mutex.unlock();
+//      std::this_thread::sleep_for(std::chrono::seconds(5));
+      std::this_thread::sleep_for(BROADCAST_PERIOD);
+   }
+}
+
+/*void checkExpiredRoutes(std::map<std::string, dv_entry> *dv,
+                        const std::map<unsigned short, time_t> *last_heard,
+                        std::map<unsigned short, std::string>& port_to_node,
+                        unsigned short this_port,
+                        std::mutex *dv_mutex,
+                        std::mutex *last_heard_mutex,
+                        std::ofstream *fout)*/
+void checkExpiredRoutes()
+{
+   while (true)
+   {
+      std::this_thread::sleep_for(NODE_CHECK_PERIOD);
+
+      dv_mutex.lock();
+      last_heard_mutex.lock();
+      time_t cur_time = time(NULL);
+      bool node_died = false;
+      bool dv_changed = false;
+      auto iter = last_heard.begin();
+      while (iter != last_heard.end())
+      {
+         if (cur_time - (iter->second) > NODE_TTL)
+         {
+            if (!node_died)
+            {
+               writeTime(fout);
+               node_died = true;
+            }
+            // Delete any DV entries that use the dead node as the next hop
+            auto dv_iter = dv.begin();
+            while (dv_iter != dv.end())
+            {
+               if (dv_iter->second.second == iter->first)
+               {
+                  dv_changed = true;
+                  dv_iter = dv.erase(dv_iter);
+               }
+               else
+                  dv_iter++;
+            }
+            writeExpireMsg(fout, port_to_node[iter->first]);
+            iter = last_heard.erase(iter);
+         }
+         else
+            iter++;
+      }
+
+      if (dv_changed)
+         writeTable(fout, dv, port);
+
+      last_heard_mutex.unlock();
+      dv_mutex.unlock();
    }
 }
 
@@ -126,9 +231,8 @@ int main(int argc, char **argv)
       return 1;
    }
 
-   std::string id = argv[1];
+   id = argv[1];
 
-   int port;
    try
    {
       port = std::stoi(argv[2], nullptr);
@@ -141,8 +245,7 @@ int main(int argc, char **argv)
       return 1;
    }
 
-   std::vector<nodeinfo> neighbor_info;
-   if (read_file(argv[3], neighbor_info, argv[1]) != 0)
+   if (readFile(argv[3], neighbor_info, argv[1]) != 0)
    {
       std::cerr << "my-router: (Node " << id << ") Error reading " << argv[2]
                 << std::endl;
@@ -150,8 +253,8 @@ int main(int argc, char **argv)
       return 1;
    }
 
-   int listen_socket = socket(AF_INET, SOCK_DGRAM, 0);
-   int out_socket = socket(AF_INET, SOCK_DGRAM, 0);
+   listen_socket = socket(AF_INET, SOCK_DGRAM, 0);
+   out_socket = socket(AF_INET, SOCK_DGRAM, 0);
    if (listen_socket == -1 || out_socket == -1)
    {
       std::cerr << "my-router: (Node " << id << ") Error creating socket"
@@ -171,9 +274,6 @@ int main(int argc, char **argv)
    }
 
    // Initialize the distance vector
-   std::map<std::string, dv_entry> dv;
-   std::map<unsigned short, int> link_costs;
-   std::map<unsigned short, std::string> port_to_node;
    dv[id] = std::make_pair(0, port);
    for (auto iter = neighbor_info.begin(); iter != neighbor_info.end(); iter++)
    {
@@ -183,7 +283,6 @@ int main(int argc, char **argv)
    }
 
    // Open a file for logging
-   std::ofstream fout;
    std::string filename = "routing-output" + id + ".txt";
    fout.open(filename, std::ofstream::out | std::ofstream::app);
 
@@ -192,11 +291,15 @@ int main(int argc, char **argv)
    writeTable(fout, dv, port);
 
    // Spawn a thread to broadcast DV periodically
-// Broadcast DV
-//   broadcastDV(dv, neighbor_info, port, out_socket);
-   std::mutex dv_mutex;
-   std::thread broadcaster(doBroadcast, &dv, neighbor_info, port, out_socket,
-                           &dv_mutex);
+//   std::thread broadcaster(doBroadcast, &dv, neighbor_info, port, out_socket,
+//                           &dv_mutex);
+   std::thread broadcaster(doBroadcast);
+
+   // Spawn a thread to check for dead nodes periodically
+//   std::thread route_expiration(checkExpiredRoutes, &dv, &last_heard,
+//                                port_to_node, port, &dv_mutex,
+//                                &last_heard_mutex, &fout);
+   std::thread route_expiration(checkExpiredRoutes);
 
    while (true)
    {
@@ -222,15 +325,15 @@ int main(int argc, char **argv)
                break;
 
             std::list<std::pair<std::string, int>> lcp;
-            get_lcp(std::string(buf+3, n-1), lcp);
+            getLCP(std::string(buf+3, n-1), lcp);
+
+            last_heard[src_port] = time(NULL);
 
             dv_mutex.lock();
-            if (updateDV(dv, lcp, port_to_node, link_costs[src_port], src_port,
-                         port, fout))
-            {
+//            if (updateDV(dv, lcp, port_to_node, link_costs[src_port], src_port,
+//                         port, fout))
+            if (updateDV(lcp, link_costs[src_port], src_port))
                writeTable(fout, dv, port);
-//               broadcastDV(dv, neighbor_info, port, out_socket);
-            }
             dv_mutex.unlock();
             break;
          }
