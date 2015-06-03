@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <sys/socket.h>
@@ -63,7 +65,6 @@ void makeControlPacket(unsigned short dest_port, std::string& packet)
          cost = htonl(INT_MAX);
       else
          cost = htonl(iter->second.first);
-      std::cout << cost << std::endl;
 
       packet += (char)(cost & 0xFF);
       packet += (char)((cost >> 8) & 0xFF);
@@ -110,11 +111,21 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
    bool dv_changed = false;
    const std::string source_id = port_to_node[source_port];
 
+   // Build up a set of all nodes for which the routing table currently relies
+   // on source_port to reach
+   std::unordered_set<std::string> unseen_dests;
+   for (auto iter = dv.begin(); iter != dv.end(); iter++)
+      if (iter->second.second == source_port)
+         unseen_dests.insert(iter->first);
+
    for (auto iter = lcp.begin(); iter != lcp.end(); iter++)
    {
       // INT_MAX implies infinite distance; this is used for poisoned reverse
       if (iter->second == INT_MAX)
          continue;
+
+      if (unseen_dests.count(iter->first) > 0)
+         unseen_dests.erase(iter->first);
 
       int path_cost = iter->second + link_cost;
 
@@ -140,6 +151,18 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
          dv_changed = true;
       }
       dv[iter->first] = std::make_pair(path_cost, source_port);
+   }
+
+   // If there are any destinations that rely on this port that were not
+   // advertised in the LCP, we assume that the destination is no longer
+   // reachable from this node
+   for (auto iter = unseen_dests.begin(); iter != unseen_dests.end(); iter++)
+   {
+      if (dv.count(*iter) > 0)
+      {
+         dv.erase(*iter);
+         dv_changed = true;
+      }
    }
 
    return dv_changed;

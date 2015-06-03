@@ -28,6 +28,7 @@ void writeTable(ofstream& fout, map<string, dv_entry> table, unsigned short curr
 	}
 
 	fout << endl;
+  fout.flush();
 }
 
 void writeTime(ofstream &fout)
@@ -44,6 +45,7 @@ void writeTime(ofstream &fout)
   fout << "*----------------------------------*\n|     " 
 	   << time  << "     |\n"
 	   << "*----------------------------------*\n";
+  fout.flush();
 }
 
 void writeDV(ofstream &fout, list<pair<string, int>> dv, const string &node_name)
@@ -65,6 +67,7 @@ void writeDV(ofstream &fout, list<pair<string, int>> dv, const string &node_name
 	}
 
 	fout << endl;
+  fout.flush();
 };
 
 void writePacketInfo(ofstream &fout, const string &source_node, const string &dest_node, unsigned short arrival_port, unsigned short outgoing_port, const string &payload, print_type ptype)
@@ -91,12 +94,14 @@ void writePacketInfo(ofstream &fout, const string &source_node, const string &de
 		fout << "Payload:\n" << payload << endl;
 
 	fout << endl;
+  fout.flush();
 }
 
 void writeExpireMsg(ofstream &fout, const string &expired_node)
 {
 	fout << "Detected expired node: " << expired_node << endl;
 	fout << "Refactoring routing table accordingly.\n" << endl;
+  fout.flush();
 }
 
 /*

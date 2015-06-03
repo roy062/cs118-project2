@@ -1,3 +1,4 @@
+#include <iostream>
 #include <fstream>
 #include <list>
 #include <string>
@@ -27,7 +28,7 @@ void getLCP(const string &lcpinfo, list<pair<string, int> > &lcplist)
 
          lcp = lcpinfo.substr(i + 1, 4);
 
-         lcp_num = (lcp[0] << 24) + (lcp[1] << 16) + (lcp[2] << 8) + lcp[3];
+         lcp_num = ((unsigned char)lcp[0] << 24) | ((unsigned char)lcp[1] << 16) | ((unsigned char)lcp[2] << 8) | (unsigned char)lcp[3];
 	  
          pair<string, int> val_pair;
          val_pair = make_pair( name, lcp_num );
