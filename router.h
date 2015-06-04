@@ -8,6 +8,10 @@ const std::chrono::seconds BROADCAST_PERIOD(5);
 const std::chrono::seconds NODE_CHECK_PERIOD(11);
 const time_t NODE_TTL = 10;
 
+// Path cost that is considered to be "infinity", which places a max path
+// limitation on any routes to prevent endless routing loops
+const int INFINITY = 255;
+
 enum PacketType : char {
    CONTROL = 0,
    DATA = 1

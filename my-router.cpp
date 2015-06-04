@@ -29,6 +29,7 @@ std::map<unsigned short, time_t> last_heard;
 std::mutex last_heard_mutex;
 
 std::ofstream fout;
+std::mutex fout_mutex;
 
 std::string id;
 unsigned short port;
@@ -37,10 +38,6 @@ int out_socket;
 
 // Makes a control packet to advertise a distance vector. Applies a poisoned
 // reverse for dest_port.
-/*void makeControlPacket(const std::map<std::string, dv_entry>& dv,
-                       unsigned short this_port,
-                       unsigned short dest_port,
-                       std::string& packet)*/
 void makeControlPacket(unsigned short dest_port, std::string& packet)
 {
    packet = std::string();
@@ -62,7 +59,7 @@ void makeControlPacket(unsigned short dest_port, std::string& packet)
       // Write cost in big-endian; apply poisoned reverse here if possible
       int cost;
       if (iter->second.second == dest_port)
-         cost = htonl(INT_MAX);
+         cost = htonl(INFINITY);
       else
          cost = htonl(iter->second.first);
 
@@ -72,12 +69,7 @@ void makeControlPacket(unsigned short dest_port, std::string& packet)
       packet += (char)((cost >> 24) & 0xFF);
    }
 }
-/*
-void broadcastDV(const std::map<std::string, dv_entry> *dv, 
-                 const std::vector<nodeinfo>& neighbor_info,
-                 unsigned short this_port,
-                 int out_socket)
-*/
+
 void broadcastDV()
 {
    std::string packet = std::string();
@@ -87,7 +79,6 @@ void broadcastDV()
    dest_addr.sin_addr.s_addr = INADDR_ANY;
    for (auto iter = neighbor_info.begin(); iter != neighbor_info.end(); iter++)
    {
-//      makeControlPacket(dv, this_port, iter->source_portno, packet);
       makeControlPacket(iter->source_portno, packet);
       dest_addr.sin_port = htons(iter->source_portno);
       sendto(out_socket, packet.c_str(), packet.size(), 0,
@@ -95,15 +86,6 @@ void broadcastDV()
    }
 }
 
-/*
-bool updateDV(std::map<std::string, dv_entry>& dv,
-              const std::list<std::pair<std::string, int>>& lcp,
-              std::map<unsigned short, std::string>& port_to_node,
-              int link_cost,
-              unsigned short source_port,
-              unsigned short this_port,
-              std::ofstream& fout)
-*/
 bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
               int link_cost,
               unsigned short source_port)
@@ -120,20 +102,25 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
 
    for (auto iter = lcp.begin(); iter != lcp.end(); iter++)
    {
-      // INT_MAX implies infinite distance; this is used for poisoned reverse
-      if (iter->second == INT_MAX)
+      int path_cost = iter->second + link_cost;
+
+      // INFINITY implies infinite distance; this is used for poisoned reverse
+      // as well as stopping infinite routing loops
+      //if (iter->second >= INFINITY)
+      if (path_cost >= INFINITY)
          continue;
 
       if (unseen_dests.count(iter->first) > 0)
          unseen_dests.erase(iter->first);
 
-      int path_cost = iter->second + link_cost;
-
       // Do not change if destination is already in table and has a better path
+      // with the exception that if the next-hop port for this entry is the
+      // same as the source port
       if (dv.count(iter->first) > 0)
       {
          // Either the path is of lower cost
-         if (dv[iter->first].first < path_cost)
+         if (dv[iter->first].first < path_cost
+             && dv[iter->first].second != source_port)
             continue;
 
          // Or the paths are of equal cost but the next router has a lower ID
@@ -145,9 +132,11 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
       if (!dv_changed)
       {
          // DV is about to change, so print out the old one before modifying it
+         //fout_mutex.lock();
          writeTime(fout);
          writeTable(fout, dv, port);
          writeDV(fout, lcp, source_id);
+         //fout_mutex.unlock();
          dv_changed = true;
       }
       dv[iter->first] = std::make_pair(path_cost, source_port);
@@ -160,6 +149,9 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
    {
       if (dv.count(*iter) > 0)
       {
+         writeTime(fout);
+         writeTable(fout, dv, port);
+         writeDV(fout, lcp, source_id);
          dv.erase(*iter);
          dv_changed = true;
       }
@@ -168,11 +160,6 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
    return dv_changed;
 }
 
-/*void doBroadcast(const std::map<std::string, dv_entry> *dv,
-                 const std::vector<nodeinfo>& neighbor_info,
-                 unsigned short this_port,
-                 int out_socket,
-                 std::mutex *dv_mutex)*/
 void doBroadcast()
 {
    while (true)
@@ -180,18 +167,10 @@ void doBroadcast()
       dv_mutex.lock();
       broadcastDV();
       dv_mutex.unlock();
-//      std::this_thread::sleep_for(std::chrono::seconds(5));
       std::this_thread::sleep_for(BROADCAST_PERIOD);
    }
 }
 
-/*void checkExpiredRoutes(std::map<std::string, dv_entry> *dv,
-                        const std::map<unsigned short, time_t> *last_heard,
-                        std::map<unsigned short, std::string>& port_to_node,
-                        unsigned short this_port,
-                        std::mutex *dv_mutex,
-                        std::mutex *last_heard_mutex,
-                        std::ofstream *fout)*/
 void checkExpiredRoutes()
 {
    while (true)
@@ -210,7 +189,9 @@ void checkExpiredRoutes()
          {
             if (!node_died)
             {
+               //fout_mutex.lock();
                writeTime(fout);
+               //fout_mutex.unlock();
                node_died = true;
             }
             // Delete any DV entries that use the dead node as the next hop
@@ -233,7 +214,11 @@ void checkExpiredRoutes()
       }
 
       if (dv_changed)
+      {
+         //fout_mutex.lock();
          writeTable(fout, dv, port);
+         //fout_mutex.unlock();
+      }
 
       last_heard_mutex.unlock();
       dv_mutex.unlock();
@@ -244,6 +229,7 @@ void usage()
 {
    std::cerr << "Usage: my-router [ID] [PORT] [INIT-FILE]" << std::endl;
 }
+
 
 int main(int argc, char **argv)
 {
@@ -314,14 +300,9 @@ int main(int argc, char **argv)
    writeTable(fout, dv, port);
 
    // Spawn a thread to broadcast DV periodically
-//   std::thread broadcaster(doBroadcast, &dv, neighbor_info, port, out_socket,
-//                           &dv_mutex);
    std::thread broadcaster(doBroadcast);
 
    // Spawn a thread to check for dead nodes periodically
-//   std::thread route_expiration(checkExpiredRoutes, &dv, &last_heard,
-//                                port_to_node, port, &dv_mutex,
-//                                &last_heard_mutex, &fout);
    std::thread route_expiration(checkExpiredRoutes);
 
    while (true)
@@ -350,13 +331,17 @@ int main(int argc, char **argv)
             std::list<std::pair<std::string, int>> lcp;
             getLCP(std::string(buf+3, n-1), lcp);
 
+            last_heard_mutex.lock();
             last_heard[src_port] = time(NULL);
+            last_heard_mutex.unlock();
 
             dv_mutex.lock();
-//            if (updateDV(dv, lcp, port_to_node, link_costs[src_port], src_port,
-//                         port, fout))
             if (updateDV(lcp, link_costs[src_port], src_port))
+            {
+               //fout_mutex.lock();
                writeTable(fout, dv, port);
+               //fout_mutex.unlock();
+            }
             dv_mutex.unlock();
             break;
          }
@@ -372,7 +357,13 @@ int main(int argc, char **argv)
             std::string dest_node(buf+13);
             unsigned short src_port = ((unsigned)buf[25] << 8) | (unsigned)buf[26];
 
+            last_heard_mutex.lock();
+            last_heard[src_port] = time(NULL);
+            last_heard_mutex.unlock();
+
             dv_mutex.lock();
+            //fout_mutex.lock();
+            writeTime(fout);
             if (dest_node == id)  // Arrived at destination
                writePacketInfo(fout, src_node, dest_node, src_port, 0,
                                std::string(buf+29, n-29), FINAL_DEST);
@@ -395,6 +386,7 @@ int main(int argc, char **argv)
             else  // Don't know how to forward packet
                writePacketInfo(fout, src_node, dest_node, src_port, 0, "",
                                ERROR);
+            //fout_mutex.unlock();
             dv_mutex.unlock();
 
             break;
