@@ -10,6 +10,14 @@
 
 using namespace std;
 
+void writeInitialization(ofstream& fout, const string& id, unsigned short port)
+{
+   fout << "Node " << id
+        <<" initializating, listening on port " << port
+        << endl << endl;
+   fout.flush();
+}
+
 void writeTable(ofstream& fout, map<string, dv_entry> table, unsigned short current_port)
 {
 	// Columns 

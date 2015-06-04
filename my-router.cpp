@@ -297,6 +297,7 @@ int main(int argc, char **argv)
 
    // Print out the initial distance vector
    writeTime(fout);
+   writeInitialization(fout, id, port);
    writeTable(fout, dv, port);
 
    // Spawn a thread to broadcast DV periodically

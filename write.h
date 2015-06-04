@@ -8,6 +8,9 @@
 
 #include "router.h"
 
+void writeInitialization(std::ofstream& fout, const std::string& id,
+                         unsigned short port);
+
 void writeTable(std::ofstream& fout,
                 std::map<std::string, dv_entry> table,
                 unsigned short current_port);
