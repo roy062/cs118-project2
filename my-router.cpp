@@ -358,9 +358,14 @@ int main(int argc, char **argv)
             std::string dest_node(buf+13);
             unsigned short src_port = ((unsigned)buf[25] << 8) | (unsigned)buf[26];
 
-            last_heard_mutex.lock();
-            last_heard[src_port] = time(NULL);
-            last_heard_mutex.unlock();
+            // 65535 is a reserved port number that indicates that the packet
+            // came directly from a client
+            if (src_port != 65535)
+            {
+               last_heard_mutex.lock();
+               last_heard[src_port] = time(NULL);
+               last_heard_mutex.unlock();
+            }
 
             dv_mutex.lock();
             //fout_mutex.lock();
