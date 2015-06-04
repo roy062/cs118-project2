@@ -1,10 +1,10 @@
 CC=g++
-CCFLAGS=-std=c++11 -c -g
+CCFLAGS=-std=c++0x -c -g
 LFLAGS= -lpthread
 
 all: my-router.o read.o write.o
 	$(CC) *.o -o my-router $(LFLAGS)
-	$(CC) -std=c++11 -g inject-packet.cpp -o inject-packet $(LFLAGS)
+	$(CC) -std=c++0x -g inject-packet.cpp -o inject-packet $(LFLAGS)
 
 clean:
 	rm -f *.o routing-output*
