@@ -3,9 +3,17 @@
 
 #include <chrono>
 
+// Maximum packet size for any type of transmission
 const int MAX_PACKET_SIZE = 4096;
+
+// Number of seconds to wait between broadcasts
 const std::chrono::seconds BROADCAST_PERIOD(5);
+
+// Number of seconds to wait between checking for expired routes
 const std::chrono::seconds NODE_CHECK_PERIOD(11);
+
+// Number of seconds for which a node can be inactive for without being
+// declared dead
 const time_t NODE_TTL = 10;
 
 // Path cost that is considered to be "infinity", which places a max path

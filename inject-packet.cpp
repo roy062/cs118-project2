@@ -5,6 +5,8 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+// Constructs the hash map for looking up the port number based off of the node
+// ID. Obviously, this is network-specific.
 void buildMap(std::unordered_map<std::string, unsigned short>& my_map)
 {
    my_map = std::unordered_map<std::string, unsigned short>();
@@ -34,6 +36,8 @@ int main(int argc, char **argv)
    unsigned short src_port;
    unsigned short dest_port;
    std::string message;
+
+   // Handle arguments and set defaults if some aren't specified
    if (argc == 1)
    {
       src_id = "A";

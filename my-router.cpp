@@ -70,6 +70,7 @@ void makeControlPacket(unsigned short dest_port, std::string& packet)
    }
 }
 
+// Broadcasts the current distance vector to all other neighboring nodes.
 void broadcastDV()
 {
    std::string packet = std::string();
@@ -86,6 +87,7 @@ void broadcastDV()
    }
 }
 
+// Updates the distance vector according to the advertised least-cost paths.
 bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
               int link_cost,
               unsigned short source_port)
@@ -132,11 +134,9 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
       if (!dv_changed)
       {
          // DV is about to change, so print out the old one before modifying it
-         //fout_mutex.lock();
          writeTime(fout);
          writeTable(fout, dv, port);
          writeDV(fout, lcp, source_id);
-         //fout_mutex.unlock();
          dv_changed = true;
       }
       dv[iter->first] = std::make_pair(path_cost, source_port);
@@ -160,6 +160,8 @@ bool updateDV(const std::list<std::pair<std::string, int>>& lcp,
    return dv_changed;
 }
 
+// Routine for the broadcasting thread, which broadcasts the distance vector
+// and the sleeps, repeating the process indefinitely.
 void doBroadcast()
 {
    while (true)
@@ -171,6 +173,8 @@ void doBroadcast()
    }
 }
 
+// Routine for the expired-routes checking thread, which checks to see if any
+// nodes have been inactive for too long.
 void checkExpiredRoutes()
 {
    while (true)
@@ -189,9 +193,7 @@ void checkExpiredRoutes()
          {
             if (!node_died)
             {
-               //fout_mutex.lock();
                writeTime(fout);
-               //fout_mutex.unlock();
                node_died = true;
             }
             // Delete any DV entries that use the dead node as the next hop
@@ -214,25 +216,22 @@ void checkExpiredRoutes()
       }
 
       if (dv_changed)
-      {
-         //fout_mutex.lock();
          writeTable(fout, dv, port);
-         //fout_mutex.unlock();
-      }
 
       last_heard_mutex.unlock();
       dv_mutex.unlock();
    }
 }
 
+// Prints out the command-line usage of this executable
 void usage()
 {
    std::cerr << "Usage: my-router [ID] [PORT] [INIT-FILE]" << std::endl;
 }
 
-
 int main(int argc, char **argv)
 {
+   // Parse arguments
    if (argc != 4)
    {
       std::cerr << "my-router: Invalid number of arguments" << std::endl;
@@ -254,6 +253,8 @@ int main(int argc, char **argv)
       return 1;
    }
 
+   // Read in the network topology file for only lines that are relevant to our
+   // router
    if (readFile(argv[3], neighbor_info, argv[1]) != 0)
    {
       std::cerr << "my-router: (Node " << id << ") Error reading " << argv[2]
@@ -262,6 +263,7 @@ int main(int argc, char **argv)
       return 1;
    }
 
+   // Create the sockets needed for communication
    listen_socket = socket(AF_INET, SOCK_DGRAM, 0);
    out_socket = socket(AF_INET, SOCK_DGRAM, 0);
    if (listen_socket == -1 || out_socket == -1)
@@ -271,6 +273,7 @@ int main(int argc, char **argv)
       return 1;
    }
 
+   // Bind to the listening port
    sockaddr_in addr;
    addr.sin_family = AF_INET;
    addr.sin_port = htons(port);
@@ -306,6 +309,7 @@ int main(int argc, char **argv)
    // Spawn a thread to check for dead nodes periodically
    std::thread route_expiration(checkExpiredRoutes);
 
+   // Repeatedly wait for packets
    while (true)
    {
       char buf[MAX_PACKET_SIZE];
@@ -332,17 +336,14 @@ int main(int argc, char **argv)
             std::list<std::pair<std::string, int>> lcp;
             getLCP(std::string(buf+3, n-1), lcp);
 
+            // We heard from a neighboring node, so update the last_heard time
             last_heard_mutex.lock();
             last_heard[src_port] = time(NULL);
             last_heard_mutex.unlock();
 
             dv_mutex.lock();
             if (updateDV(lcp, link_costs[src_port], src_port))
-            {
-               //fout_mutex.lock();
                writeTable(fout, dv, port);
-               //fout_mutex.unlock();
-            }
             dv_mutex.unlock();
             break;
          }
@@ -359,7 +360,8 @@ int main(int argc, char **argv)
             unsigned short src_port = ((unsigned)buf[25] << 8) | (unsigned)buf[26];
 
             // 65535 is a reserved port number that indicates that the packet
-            // came directly from a client
+            // came directly from a client, so we don't want to update the
+            // last_heard time for a non-router node
             if (src_port != 65535)
             {
                last_heard_mutex.lock();
@@ -368,7 +370,6 @@ int main(int argc, char **argv)
             }
 
             dv_mutex.lock();
-            //fout_mutex.lock();
             writeTime(fout);
             if (dest_node == id)  // Arrived at destination
                writePacketInfo(fout, src_node, dest_node, src_port, 0,
@@ -380,6 +381,7 @@ int main(int argc, char **argv)
                dest_addr.sin_addr.s_addr = INADDR_ANY;
                dest_addr.sin_port = htons(dv[dest_node].second);
                
+               // Change the source port number to this node's listening port
                buf[25] = (port >> 8) & 0xFF;
                buf[26] = port & 0xFF;
 
@@ -392,7 +394,6 @@ int main(int argc, char **argv)
             else  // Don't know how to forward packet
                writePacketInfo(fout, src_node, dest_node, src_port, 0, "",
                                ERROR);
-            //fout_mutex.unlock();
             dv_mutex.unlock();
 
             break;
