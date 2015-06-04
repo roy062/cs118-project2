@@ -10,7 +10,7 @@ const time_t NODE_TTL = 10;
 
 // Path cost that is considered to be "infinity", which places a max path
 // limitation on any routes to prevent endless routing loops
-const int INFINITY = 255;
+const int INFINITY = 64;
 
 enum PacketType : char {
    CONTROL = 0,

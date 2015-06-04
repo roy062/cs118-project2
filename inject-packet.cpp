@@ -37,9 +37,9 @@ int main(int argc, char **argv)
    if (argc == 1)
    {
       src_id = "A";
-      dest_id = "F";
+      dest_id = "D";
       src_port = 10000;
-      dest_port = 10005;
+      dest_port = 10003;
       message = "doot doot";
    }
    else if (argc == 3)
@@ -112,11 +112,6 @@ int main(int argc, char **argv)
 
    // Write out message itself
    packet += message;
-   
-/*
-   if (argc < 3)
-      packet = std::string("\x01" "A\0\0\0\0\0\0\0\0\0\0\0" "D\0\0\0\0\0\0\0\0\0\0\0" "\xff" "\xff" "\x00" "\x04" "doot", 33);
-*/
 
    sendto(socket_fd, packet.c_str(), 29 + msg_len, 0, (sockaddr*)&addr, sizeof(addr));
    close(socket_fd);
